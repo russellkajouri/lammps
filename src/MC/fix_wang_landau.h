@@ -103,6 +103,7 @@ class FixWangLandau : public Fix {
   int max_ngas;
   int min_ngas;
   double accuracy_fac;
+  bool wl_finished;
 
   double energy_intra;
 

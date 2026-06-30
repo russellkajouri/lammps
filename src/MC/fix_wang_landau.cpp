@@ -42,12 +42,14 @@
 #include "random_park.h"
 #include "region.h"
 #include "update.h"
+#include "timer.h"
 
 #include <cmath>
 #include <cstring>
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#include <iomanip>
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -280,6 +282,7 @@ void FixWangLandau::options(int narg, char **arg)
   min_ngas = -1;
   max_ngas = INT_MAX;
   accuracy_fac = 500.0;
+  wl_finished = false;
 
   int iarg = 0;
   while (iarg < narg) {
@@ -892,6 +895,12 @@ void FixWangLandau::pre_exchange()
 
 void FixWangLandau::wang_landau_update(const int n)
 {
+  // an activated wl_finished flag means
+  // that the histogram is converged, so we don't
+  // upate the histogram and qs.
+  if (wl_finished) return;
+
+
   // Wang Landau update step
   unsigned int bin_index = n2i[n];
   qs[bin_index] += std::log(f);
@@ -902,13 +911,22 @@ void FixWangLandau::wang_landau_update(const int n)
   // of hs being greater than 500 / sqrt(log(f))
   for (auto h : hs) {
     if (h < accuracy_fac / std::sqrt(std::log(f))) {
-      return;
+        wl_finished = false; // it can be removed, I think!!
+        return;
     }
   }
 
+  // converged
   write_histogram();
-  MPI_Finalize();
-  exit(0);
+  wl_finished = true;
+
+  // friendly
+  timer->force_timeout();
+  return;
+  
+  //write_histogram();
+  //MPI_Finalize();
+  //exit(0);
 }
 
 /* ----------------------------------------------------------------------
@@ -924,7 +942,9 @@ void FixWangLandau::write_histogram() {
       MPI_Abort(world, 1);
     }
     for (unsigned int i = 0; i < ns.size(); i++) {
-      file << ns[i] << "\t" << qs[i] << "\t" << hs[i] << std::endl;
+      file << 
+        std::scientific << std::setprecision(24) <<
+        ns[i] << "\t" << qs[i] << "\t" << hs[i] << std::endl;
     }
     file.close();
   }
